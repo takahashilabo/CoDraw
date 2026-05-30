@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>CoDraw – AIといっしょに描く</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="header-left">
+        <h1>CoDraw</h1>
+        <span class="tagline">AI と一緒に一枚の絵を描こう</span>
+      </div>
+    </header>
+
+    <main>
+      <div class="canvas-area">
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="800" height="600"></canvas>
+
+          <div id="hint" class="hint" aria-hidden="true">
+            ここに自由に描いてみましょう
+          </div>
+
+          <div id="ai-overlay" hidden>
+            <div class="dots">
+              <span></span><span></span><span></span>
+            </div>
+            <p>AI が考えています…</p>
+          </div>
+        </div>
+
+        <p id="message" role="status"></p>
+      </div>
+    </main>
+
+    <footer>
+      <div class="controls">
+        <label class="ctrl" title="ブラシの太さ">
+          <span>太さ</span>
+          <input type="range" id="brush-size" min="1" max="20" value="3">
+        </label>
+        <label class="ctrl" title="ブラシの色">
+          <span>色</span>
+          <input type="color" id="brush-color" value="#1a1a1a">
+        </label>
+        <div class="btns">
+          <button id="ai-btn" class="btn primary" title="AIに次の一手を描いてもらう">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            AI に描いてもらう
+          </button>
+          <button id="undo-ai-btn" class="btn" title="AIの最後の描画を取り消す">AI を戻す</button>
+          <button id="clear-btn" class="btn" title="キャンバスをクリア">クリア</button>
+          <button id="save-btn" class="btn" title="PNG として保存">保存</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

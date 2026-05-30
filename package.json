@@ -1,0 +1,13 @@
+{
+  "name": "codraw",
+  "version": "1.0.0",
+  "description": "AIと共同制作するお絵かきツール",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "@anthropic-ai/sdk": "^0.36.0"
+  }
+}

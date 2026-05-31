@@ -3,10 +3,10 @@
 require('dotenv').config();
 
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error('ERROR: GEMINI_API_KEY が設定されていません');
+if (!process.env.OPENROUTER_API_KEY) {
+  console.error('ERROR: OPENROUTER_API_KEY が設定されていません');
   process.exit(1);
 }
 
@@ -14,10 +14,16 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-  model: 'gemini-2.5-flash',
-  systemInstruction: `あなたは共同創作AIアーティストです。人間とあなたが交互に一枚のキャンバス（800×600ピクセル）に絵を描き、一緒に作品を仕上げていきます。
+const client = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  defaultHeaders: {
+    'HTTP-Referer': 'http://localhost:3000',
+    'X-Title': 'CoDraw',
+  },
+});
+
+const SYSTEM = `あなたは共同創作AIアーティストです。人間とあなたが交互に一枚のキャンバス（800×600ピクセル）に絵を描き、一緒に作品を仕上げていきます。
 
 現在のキャンバスの状態を見て、描かれたものを補完・発展させるようなストロークを加えてください。創造的かつ芸術的な感性を持って取り組んでください。
 
@@ -36,22 +42,29 @@ const model = genAI.getGenerativeModel({
 - 細い線（width 1〜2）で繊細な描写、太い線（width 4〜8）でダイナミックな表現
 - opacity 0.2〜0.4 で影や空気感、0.7〜1.0 でメインの線
 
-芸術的な視点で：キャンバスに描かれているものから「何を描こうとしているのか」を想像し、それを完成に近づける、あるいは新たな物語を加えるストロークを選んでください。キャンバスがほぼ空白の場合は、続きを描きたくなるような誘いの一筆を。`,
-});
+芸術的な視点で：キャンバスに描かれているものから「何を描こうとしているのか」を想像し、それを完成に近づける、あるいは新たな物語を加えるストロークを選んでください。キャンバスがほぼ空白の場合は、続きを描きたくなるような誘いの一筆を。`;
 
 app.post('/api/draw', async (req, res) => {
   const { imageData } = req.body;
   if (!imageData) return res.status(400).json({ error: 'No image data' });
 
-  const b64 = imageData.replace(/^data:image\/\w+;base64,/, '');
-
   try {
-    const result = await model.generateContent([
-      { inlineData: { mimeType: 'image/png', data: b64 } },
-      'このキャンバスに、あなたの絵筆を加えてください。JSONのみで返してください。',
-    ]);
+    const response = await client.chat.completions.create({
+      model: 'google/gemini-2.0-flash-exp:free',
+      max_tokens: 2048,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageData } },
+            { type: 'text', text: 'このキャンバスに、あなたの絵筆を加えてください。JSONのみで返してください。' },
+          ],
+        },
+      ],
+    });
 
-    let text = result.response.text().trim();
+    let text = response.choices[0].message.content.trim();
     let data;
     try {
       data = JSON.parse(text);

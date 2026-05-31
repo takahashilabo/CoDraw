@@ -50,7 +50,7 @@ app.post('/api/draw', async (req, res) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-exp:free',
+      model: 'meta-llama/llama-4-scout:free',
       max_tokens: 2048,
       messages: [
         { role: 'system', content: SYSTEM },

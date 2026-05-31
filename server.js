@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 
 const BASE_URL  = process.env.AI_BASE_URL  || 'http://localhost:1234/v1';
 const API_KEY   = process.env.AI_API_KEY   || 'lm-studio';
-const AI_MODEL  = process.env.AI_MODEL     || 'local-model';
+const AI_MODEL  = process.env.AI_MODEL     || 'qwen2.5-vl-3b-instruct';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));

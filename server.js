@@ -50,7 +50,7 @@ app.post('/api/draw', async (req, res) => {
 
   try {
     const response = await client.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free',
+      model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct:free',
       max_tokens: 2048,
       messages: [
         { role: 'system', content: SYSTEM },

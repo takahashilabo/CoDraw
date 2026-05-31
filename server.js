@@ -44,6 +44,18 @@ const SYSTEM = `あなたは共同創作AIアーティストです。人間と�
 
 芸術的な視点で：キャンバスに描かれているものから「何を描こうとしているのか」を想像し、それを完成に近づける、あるいは新たな物語を加えるストロークを選んでください。キャンバスがほぼ空白の場合は、続きを描きたくなるような誘いの一筆を。`;
 
+function normalizePoints(points) {
+  if (!Array.isArray(points)) return [];
+  return points
+    .map(p => {
+      if (Array.isArray(p)) return [p[0], p[1]];
+      if (p && typeof p === 'object') return [p.x ?? p[0], p.y ?? p[1]];
+      return null;
+    })
+    .filter(p => p && typeof p[0] === 'number' && typeof p[1] === 'number'
+      && p[0] >= 0 && p[0] <= 800 && p[1] >= 0 && p[1] <= 600);
+}
+
 app.post('/api/draw', async (req, res) => {
   const { imageData } = req.body;
   if (!imageData) return res.status(400).json({ error: 'No image data' });
@@ -65,6 +77,8 @@ app.post('/api/draw', async (req, res) => {
     });
 
     let text = response.choices[0].message.content.trim();
+    console.log('AI raw response:', text.slice(0, 300));
+
     let data;
     try {
       data = JSON.parse(text);
@@ -78,7 +92,7 @@ app.post('/api/draw', async (req, res) => {
       data.strokes = data.strokes
         .map(s => ({
           ...s,
-          points: (s.points || []).filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600),
+          points: normalizePoints(s.points),
         }))
         .filter(s => s.points.length >= 2);
     }

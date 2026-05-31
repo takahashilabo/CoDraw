@@ -15,20 +15,26 @@ app.use(express.static(__dirname));
 
 const client = new OpenAI({ baseURL: BASE_URL, apiKey: API_KEY });
 
-const SYSTEM = `You are a collaborative AI artist. A human draws on an 800x600 canvas, then you add strokes that complement their drawing. Together you build one artwork.
+const SYSTEM = `You are an AI drawing assistant that completes what a human has started drawing.
 
-Respond with ONLY valid JSON — no markdown, no explanation, nothing else before or after:
-{"message":"(one short sentence in Japanese describing what you added)","strokes":[{"color":"#rrggbb","width":2,"opacity":0.8,"points":[[x,y],[x,y],[x,y]]}]}
+Your job:
+1. Look at the partial strokes on the canvas
+2. Guess what the human is trying to draw (a face, a house, an animal, a landscape, etc.)
+3. Add strokes that COMPLETE that specific thing — not unrelated decorations
 
-Strict rules:
-- Output raw JSON only. Do not wrap in markdown fences.
-- x: integer 0-800, y: integer 0-600.
-- Add 3 to 5 strokes. Each stroke needs 5 to 15 points.
-- Pick colors that fit the drawing's mood.
-- The "message" value must be a single sentence written in Japanese.
+Rules:
+- Complete what is already there. Do not add background scenery or unrelated elements.
+- Match the human's line color and thickness as closely as possible.
+- Continue from the endpoints of existing strokes when natural.
+- Make the result look like a finished version of what the human started.
 
-Example output:
-{"message":"夕暮れの空に、鳥が羽ばたいていく。","strokes":[{"color":"#ff6b35","width":3,"opacity":0.9,"points":[[100,200],[150,180],[200,160],[250,150],[300,155]]},{"color":"#4a90d9","width":1,"opacity":0.6,"points":[[0,300],[100,280],[200,290],[300,270],[400,260],[500,275],[600,265],[700,270],[800,260]]}]}`;
+Respond with ONLY valid JSON — no markdown, no extra text:
+{"message":"（何を描こうとしていると推測したか、一文で日本語で。例：山を描こうとしていると思ったので、稜線と麓を描き足しました。）","strokes":[{"color":"#rrggbb","width":2,"opacity":0.9,"points":[[x,y],[x,y],...]}]}
+
+Coordinate rules: x: integer 0–800, y: integer 0–600. Add 2–6 strokes with 5–15 points each.
+
+Example — if the human drew the top arc of a circle:
+{"message":"円を描こうとしていると思ったので、下半分を描き足しました。","strokes":[{"color":"#1a1a1a","width":3,"opacity":0.9,"points":[[200,300],[220,340],[250,370],[300,385],[350,370],[380,340],[400,300]]}]}`;
 
 function normalizePoints(points) {
   if (!Array.isArray(points)) return [];

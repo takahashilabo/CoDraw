@@ -5,23 +5,15 @@ require('dotenv').config();
 const express = require('express');
 const OpenAI = require('openai');
 
-if (!process.env.OPENROUTER_API_KEY) {
-  console.error('ERROR: OPENROUTER_API_KEY が設定されていません');
-  process.exit(1);
-}
+const BASE_URL  = process.env.AI_BASE_URL  || 'http://localhost:1234/v1';
+const API_KEY   = process.env.AI_API_KEY   || 'lm-studio';
+const AI_MODEL  = process.env.AI_MODEL     || 'local-model';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
-const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': 'http://localhost:3000',
-    'X-Title': 'CoDraw',
-  },
-});
+const client = new OpenAI({ baseURL: BASE_URL, apiKey: API_KEY });
 
 const SYSTEM = `You are a collaborative AI artist. A human draws on an 800x600 canvas, then you add strokes that complement their drawing. Together you build one artwork.
 
@@ -31,7 +23,7 @@ Respond with ONLY valid JSON — no markdown, no explanation, nothing else befor
 Strict rules:
 - Output raw JSON only. Do not wrap in markdown fences.
 - x: integer 0-800, y: integer 0-600.
-- Add 3 to 6 strokes. Each stroke needs 5 to 20 points.
+- Add 3 to 5 strokes. Each stroke needs 5 to 15 points.
 - Pick colors that fit the drawing's mood.
 - The "message" value must be a single sentence written in Japanese.
 
@@ -50,14 +42,39 @@ function normalizePoints(points) {
       && p[0] >= 0 && p[0] <= 800 && p[1] >= 0 && p[1] <= 600);
 }
 
+function repairJSON(text) {
+  // 直接パース
+  try { return JSON.parse(text); } catch {}
+
+  // マークダウンのコードブロックを除去
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch {} }
+
+  // JSON オブジェクトを探す
+  const start = text.indexOf('{');
+  if (start === -1) throw new Error('No JSON found in response');
+  let partial = text.slice(start);
+
+  // 閉じ括弧を補完して修復を試みる
+  let sq = 0, cu = 0;
+  for (const ch of partial) {
+    if (ch === '[') sq++; else if (ch === ']') sq--;
+    if (ch === '{') cu++; else if (ch === '}') cu--;
+  }
+  const repaired = partial + ']'.repeat(Math.max(0, sq)) + '}'.repeat(Math.max(0, cu));
+  try { return JSON.parse(repaired); } catch {}
+
+  throw new Error('Could not parse AI response as JSON');
+}
+
 app.post('/api/draw', async (req, res) => {
   const { imageData } = req.body;
   if (!imageData) return res.status(400).json({ error: 'No image data' });
 
   try {
     const response = await client.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct',
-      max_tokens: 2048,
+      model: AI_MODEL,
+      max_tokens: 1024,
       temperature: 0.7,
       messages: [
         { role: 'system', content: SYSTEM },
@@ -65,30 +82,20 @@ app.post('/api/draw', async (req, res) => {
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: imageData } },
-            { type: 'text', text: 'このキャンバスに、あなたの絵筆を加えてください。JSONのみで返してください。' },
+            { type: 'text', text: 'Add your strokes to this canvas. Reply with JSON only.' },
           ],
         },
       ],
     });
 
-    let text = response.choices[0].message.content.trim();
-    console.log('AI raw response:', text.slice(0, 300));
+    const text = response.choices[0].message.content.trim();
+    console.log('AI raw response:', text.slice(0, 200));
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('AIの返答からJSONを抽出できませんでした');
-      data = JSON.parse(m[0]);
-    }
+    const data = repairJSON(text);
 
     if (Array.isArray(data.strokes)) {
       data.strokes = data.strokes
-        .map(s => ({
-          ...s,
-          points: normalizePoints(s.points),
-        }))
+        .map(s => ({ ...s, points: normalizePoints(s.points) }))
         .filter(s => s.points.length >= 2);
     }
 
@@ -101,5 +108,6 @@ app.post('/api/draw', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`\nCoDraw 起動中 → http://localhost:${PORT}\n`);
+  console.log(`\nCoDraw 起動中 → http://localhost:${PORT}`);
+  console.log(`AI エンドポイント: ${BASE_URL} / モデル: ${AI_MODEL}\n`);
 });

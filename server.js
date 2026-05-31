@@ -15,43 +15,6 @@ app.use(express.static(__dirname));
 
 const client = new OpenAI({ baseURL: BASE_URL, apiKey: API_KEY });
 
-// ── プロンプト ────────────────────────────────────────────────────────────────
-const SYSTEM = `You are an AI drawing assistant. A human draws partial strokes, and you complete the drawing by guessing what they are trying to make.
-
-IMPORTANT: Instead of raw pixel coordinates, describe shapes using the types below. The app will convert them to accurate lines automatically.
-
-Shape types (all fields required unless marked optional):
-  {"type":"ellipse", "cx":X, "cy":Y, "rx":W, "ry":H}          — oval / eye shape
-  {"type":"circle",  "cx":X, "cy":Y, "r":R}                    — circle / pupil / sun
-  {"type":"arc",     "cx":X, "cy":Y, "r":R, "startAngle":A, "endAngle":B}  — partial circle (degrees: 0=right 90=bottom 180=left 270=top)
-  {"type":"line",    "x1":X1,"y1":Y1,"x2":X2,"y2":Y2}         — straight line
-  {"type":"curve",   "points":[[x,y],...]}                      — freehand curve (5–12 points)
-
-Each shape also takes: "color":"#rrggbb", "width":1–6, "opacity":0.5–1.0
-
-Canvas: 800 wide × 600 tall. Top-left=(0,0), bottom-right=(800,600).
-
-Respond with ONLY valid JSON:
-{"message":"（推測した内容を一文で日本語で）","shapes":[...]}
-
-Examples:
-
-Human drew top half of a face → complete with eyes, nose, mouth:
-{"message":"顔を描こうとしていると思ったので、目・鼻・口を描き足しました。","shapes":[
-  {"type":"ellipse","cx":280,"cy":220,"rx":35,"ry":20,"color":"#1a1a1a","width":2,"opacity":0.9},
-  {"type":"ellipse","cx":520,"cy":220,"rx":35,"ry":20,"color":"#1a1a1a","width":2,"opacity":0.9},
-  {"type":"circle","cx":280,"cy":220,"r":8,"color":"#1a1a1a","width":3,"opacity":1},
-  {"type":"circle","cx":520,"cy":220,"r":8,"color":"#1a1a1a","width":3,"opacity":1},
-  {"type":"line","x1":390,"y1":260,"x2":410,"y2":280,"color":"#1a1a1a","width":2,"opacity":0.8},
-  {"type":"arc","cx":400,"cy":330,"r":60,"startAngle":20,"endAngle":160,"color":"#1a1a1a","width":2,"opacity":0.9}
-]}
-
-Human drew a diagonal line → complete as a mountain:
-{"message":"山を描こうとしていると思ったので、反対側の斜面と麓を描き足しました。","shapes":[
-  {"type":"line","x1":400,"y1":100,"x2":600,"y2":400,"color":"#1a1a1a","width":2,"opacity":0.9},
-  {"type":"line","x1":100,"y1":400,"x2":600,"y2":400,"color":"#1a1a1a","width":2,"opacity":0.9}
-]}`;
-
 // ── 形状 → 座標点 変換 ────────────────────────────────────────────────────────
 function shapeToPoints(shape) {
   const steps = (n) => Array.from({ length: n + 1 }, (_, i) => i / n);
@@ -59,15 +22,15 @@ function shapeToPoints(shape) {
   switch (shape.type) {
     case 'ellipse':
     case 'oval': {
-      const { cx = 400, cy = 300, rx = 50, ry = 30 } = shape;
-      const n = Math.max(16, Math.round((rx + ry) * 0.5));
+      const { cx = 400, cy = 300, rx = 60, ry = 40 } = shape;
+      const n = Math.max(20, Math.round((rx + ry)));
       return steps(n).map(t => {
         const a = t * 2 * Math.PI;
         return [Math.round(cx + rx * Math.cos(a)), Math.round(cy + ry * Math.sin(a))];
       });
     }
     case 'circle': {
-      const { cx = 400, cy = 300, r = 50 } = shape;
+      const { cx = 400, cy = 300, r = 60 } = shape;
       return shapeToPoints({ ...shape, type: 'ellipse', rx: r, ry: r });
     }
     case 'arc': {
@@ -81,9 +44,9 @@ function shapeToPoints(shape) {
       });
     }
     case 'line': {
-      const { x1 = 0, y1 = 0, x2 = 100, y2 = 100 } = shape;
+      const { x1 = 0, y1 = 0, x2 = 800, y2 = 0 } = shape;
       const len = Math.hypot(x2 - x1, y2 - y1);
-      const n = Math.max(2, Math.round(len / 15));
+      const n = Math.max(2, Math.round(len / 10));
       return steps(n).map(t => [Math.round(x1 + (x2 - x1) * t), Math.round(y1 + (y2 - y1) * t)]);
     }
     case 'curve':
@@ -98,8 +61,8 @@ function shapesToStrokes(shapes) {
   return shapes
     .map(s => ({
       color:   s.color   || '#1a1a1a',
-      width:   Math.max(0.5, Math.min(12, s.width   ?? 2)),
-      opacity: Math.max(0.1, Math.min(1,  s.opacity ?? 0.9)),
+      width:   Math.max(1, Math.min(12, s.width   ?? 2)),
+      opacity: Math.max(0.5, Math.min(1,  s.opacity ?? 0.9)),
       points:  shapeToPoints(s).filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600),
     }))
     .filter(s => s.points.length >= 2);
@@ -138,55 +101,116 @@ function repairJSON(text) {
   throw new Error('Could not parse AI response as JSON');
 }
 
+// ── AI レスポンスを strokes に変換 ───────────────────────────────────────────
+function toStrokes(data) {
+  if (Array.isArray(data.shapes)) {
+    return shapesToStrokes(data.shapes);
+  }
+  if (Array.isArray(data.strokes)) {
+    return data.strokes
+      .map(s => {
+        if (s.type && s.type !== 'curve') {
+          return { ...s, points: shapeToPoints(s).filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600) };
+        }
+        const pts = (s.points || [])
+          .map(p => Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y])
+          .filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600);
+        return { ...s, points: pts };
+      })
+      .filter(s => s.points.length >= 2);
+  }
+  return [];
+}
+
+// ── プロンプト定義 ────────────────────────────────────────────────────────────
+const COMPLETE_SYSTEM = `You are an AI drawing assistant. A human draws partial strokes, and you complete the drawing by guessing what they are trying to make.
+
+Shape types you can output:
+  {"type":"ellipse","cx":X,"cy":Y,"rx":W,"ry":H}
+  {"type":"circle","cx":X,"cy":Y,"r":R}
+  {"type":"arc","cx":X,"cy":Y,"r":R,"startAngle":A,"endAngle":B}   (degrees: 0=right 90=down 180=left 270=up)
+  {"type":"line","x1":X1,"y1":Y1,"x2":X2,"y2":Y2}
+  {"type":"curve","points":[[x,y],...]}
+
+Each shape also needs: "color":"#rrggbb", "width":1–5, "opacity":0.8–1.0
+
+Canvas: 800 wide × 600 tall.
+
+Size guidelines — shapes must be CLEARLY VISIBLE:
+- Face / head: circle r:120–180, or ellipse rx:120–160 ry:150–200
+- Eyes: ellipse rx:35–55 ry:20–30 (pair them left/right of center)
+- Pupil: circle r:12–18
+- Mouth smile: arc r:40–70 startAngle:10 endAngle:170
+- Sun: circle r:50–80
+- Mountain: lines spanning 200–600px
+- House roof: lines at least 200px wide
+- Minimum circle radius: 20px. Minimum ellipse axis: 15px.
+
+IMPORTANT: Use dark colors (#1a1a1a, #333, or matching the user's color). Avoid light colors like #ccc or #eee on white canvas.
+
+Respond with ONLY valid JSON (no markdown):
+{"message":"（推測した内容を一文で日本語で）","shapes":[...]}`;
+
+const REFINE_SYSTEM = `You are a drawing beautifier. Look at the hand-drawn strokes and replace each one with a clean geometric shape.
+
+Recognize each stroke:
+- Roughly straight lines → {"type":"line", x1,y1,x2,y2}
+- Roughly circular strokes → {"type":"circle", cx,cy,r}
+- Oval / elongated circles → {"type":"ellipse", cx,cy,rx,ry}
+- Partial circles / arcs → {"type":"arc", cx,cy,r,startAngle,endAngle}
+- Complex curves → {"type":"curve","points":[[x,y],...]}
+
+Rules:
+- Keep the SAME approximate position and size as the drawn strokes.
+- Keep the same color as the original stroke (use the dominant color you see).
+- Output one clean shape per hand-drawn stroke.
+- Make lines perfectly straight, circles perfectly round.
+
+Canvas: 800 × 600. Use same coordinate system.
+
+Respond with ONLY valid JSON (no markdown):
+{"message":"（認識した図形を日本語で説明。例：直線2本と楕円1つに整形しました。）","shapes":[...]}`;
+
 // ── API エンドポイント ────────────────────────────────────────────────────────
+async function callAI(systemPrompt, imageData) {
+  const response = await client.chat.completions.create({
+    model: AI_MODEL,
+    max_tokens: 1024,
+    temperature: 0.4,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageData } },
+          { type: 'text', text: 'Reply with JSON only.' },
+        ],
+      },
+    ],
+  });
+
+  const text = response.choices[0].message.content.trim();
+  console.log('AI raw response:', text.slice(0, 300));
+  const data = repairJSON(text);
+  return { message: data.message || '', strokes: toStrokes(data) };
+}
+
 app.post('/api/draw', async (req, res) => {
   const { imageData } = req.body;
   if (!imageData) return res.status(400).json({ error: 'No image data' });
-
   try {
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 1024,
-      temperature: 0.5,
-      messages: [
-        { role: 'system', content: SYSTEM },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageData } },
-            { type: 'text', text: 'Look at the canvas and complete the drawing. Reply with JSON only.' },
-          ],
-        },
-      ],
-    });
+    res.json(await callAI(COMPLETE_SYSTEM, imageData));
+  } catch (e) {
+    console.error('AI error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    const text = response.choices[0].message.content.trim();
-    console.log('AI raw response:', text.slice(0, 300));
-
-    const data = repairJSON(text);
-
-    // shapes 形式 → strokes 形式に変換
-    if (Array.isArray(data.shapes)) {
-      data.strokes = shapesToStrokes(data.shapes);
-      delete data.shapes;
-    }
-
-    // 旧来の strokes 形式にも対応
-    if (Array.isArray(data.strokes)) {
-      data.strokes = data.strokes
-        .map(s => {
-          if (s.type && s.type !== 'curve') {
-            return { ...s, points: shapeToPoints(s).filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600) };
-          }
-          const pts = (s.points || [])
-            .map(p => Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y])
-            .filter(([x, y]) => x >= 0 && x <= 800 && y >= 0 && y <= 600);
-          return { ...s, points: pts };
-        })
-        .filter(s => s.points.length >= 2);
-    }
-
-    res.json(data);
+app.post('/api/refine', async (req, res) => {
+  const { imageData } = req.body;
+  if (!imageData) return res.status(400).json({ error: 'No image data' });
+  try {
+    res.json(await callAI(REFINE_SYSTEM, imageData));
   } catch (e) {
     console.error('AI error:', e.message);
     res.status(500).json({ error: e.message });

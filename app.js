@@ -26,6 +26,7 @@ const hintEl    = document.getElementById('hint');
 const overlayEl = document.getElementById('ai-overlay');
 const msgEl     = document.getElementById('message');
 const aiBtn     = document.getElementById('ai-btn');
+const refineBtn = document.getElementById('refine-btn');
 const undoAiBtn = document.getElementById('undo-ai-btn');
 const clearBtn  = document.getElementById('clear-btn');
 const saveBtn   = document.getElementById('save-btn');
@@ -124,6 +125,7 @@ function drawStroke(s) {
 
 /* ── AI interaction ─────────────────────────────── */
 aiBtn.addEventListener('click', () => runAI(true));
+refineBtn.addEventListener('click', refine);
 
 async function runAI(manual) {
   clearTimeout(autoTimer);
@@ -162,7 +164,61 @@ async function runAI(manual) {
   }
 
   aiActive   = false;
-  aiBtn.disabled = false;
+  aiBtn.disabled    = false;
+  refineBtn.disabled = false;
+}
+
+/* ── 整形 ────────────────────────────────────────── */
+async function refine() {
+  clearTimeout(autoTimer);
+  if (aiActive || strokes.length === 0) return;
+
+  const prevStrokes = strokes.map(s => ({ ...s, points: [...s.points] }));
+
+  aiActive = true;
+  aiBtn.disabled     = true;
+  refineBtn.disabled = true;
+  undoAiBtn.disabled = true;
+  overlayEl.hidden   = false;
+  setMsg('');
+
+  try {
+    const res = await fetch('/api/refine', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ imageData: snapshot() }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const { message, strokes: refined } = await res.json();
+
+    overlayEl.hidden = true;
+    if (message) setMsg(message);
+
+    if (Array.isArray(refined) && refined.length > 0) {
+      strokes = [];
+      lastAIStart = 0;
+      paint();
+      await animateAI(refined);
+      // undo で元の手描きに戻せるよう保存
+      undoAiBtn.onclick = () => {
+        strokes = prevStrokes;
+        lastAIStart = -1;
+        undoAiBtn.disabled = true;
+        undoAiBtn.onclick = defaultUndo;
+        paint();
+        setMsg('');
+      };
+      undoAiBtn.disabled = false;
+    }
+  } catch (e) {
+    console.error(e);
+    overlayEl.hidden = true;
+    setMsg('エラーが発生しました。もう一度お試しください。');
+  }
+
+  aiActive = false;
+  aiBtn.disabled     = false;
+  refineBtn.disabled = false;
 }
 
 /* ── AI stroke animation ────────────────────────── */
@@ -193,14 +249,15 @@ async function animateAI(aiStrokes) {
 }
 
 /* ── Undo AI ────────────────────────────────────── */
-undoAiBtn.addEventListener('click', () => {
+function defaultUndo() {
   if (lastAIStart < 0) return;
   strokes.splice(lastAIStart);
   lastAIStart = -1;
   undoAiBtn.disabled = true;
   paint();
   setMsg('');
-});
+}
+undoAiBtn.addEventListener('click', defaultUndo);
 
 /* ── Utilities ──────────────────────────────────── */
 function snapshot() {

@@ -235,6 +235,14 @@ input[type="color"] {
 .btn.primary:hover:not(:disabled) { background: #5a52d5; border-color: #5a52d5; }
 .btn.primary:active:not(:disabled) { background: #4e47bf; }
 
+.btn.accent {
+  background: #fff;
+  border-color: #6c63ff;
+  color: #6c63ff;
+}
+.btn.accent:hover:not(:disabled) { background: #f0eeff; }
+.btn.accent:active:not(:disabled) { background: #e4dfff; }
+
 /* ── Mobile ─────────────────────────────────────── */
 @media (max-width: 520px) {
   header h1 { font-size: 1.1rem; }

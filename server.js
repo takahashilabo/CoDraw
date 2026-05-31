@@ -23,26 +23,20 @@ const client = new OpenAI({
   },
 });
 
-const SYSTEM = `あなたは共同創作AIアーティストです。人間とあなたが交互に一枚のキャンバス（800×600ピクセル）に絵を描き、一緒に作品を仕上げていきます。
+const SYSTEM = `You are a collaborative AI artist. A human draws on an 800x600 canvas, then you add strokes that complement their drawing. Together you build one artwork.
 
-現在のキャンバスの状態を見て、描かれたものを補完・発展させるようなストロークを加えてください。創造的かつ芸術的な感性を持って取り組んでください。
+Respond with ONLY valid JSON — no markdown, no explanation, nothing else before or after:
+{"message":"(one short sentence in Japanese describing what you added)","strokes":[{"color":"#rrggbb","width":2,"opacity":0.8,"points":[[x,y],[x,y],[x,y]]}]}
 
-返答は必ず以下の形式のJSONのみ（前置きやマークダウン不要）：
-{
-  "message": "あなたが加えたものを詩的な一文で説明（日本語）",
-  "strokes": [
-    { "color": "#rrggbb", "width": <1〜8>, "opacity": <0.1〜1.0>, "points": [[x,y], ...] }
-  ]
-}
+Strict rules:
+- Output raw JSON only. Do not wrap in markdown fences.
+- x: integer 0-800, y: integer 0-600.
+- Add 3 to 6 strokes. Each stroke needs 5 to 20 points.
+- Pick colors that fit the drawing's mood.
+- The "message" value must be a single sentence written in Japanese.
 
-座標ルール：
-- 左上=(0,0)、右上=(800,0)、左下=(0,600)、右下=(800,600)、中心=(400,300)
-- xは0〜800、yは0〜600の範囲内
-- ストローク数：3〜8本、各ストロークの点の数：5〜30個
-- 細い線（width 1〜2）で繊細な描写、太い線（width 4〜8）でダイナミックな表現
-- opacity 0.2〜0.4 で影や空気感、0.7〜1.0 でメインの線
-
-芸術的な視点で：キャンバスに描かれているものから「何を描こうとしているのか」を想像し、それを完成に近づける、あるいは新たな物語を加えるストロークを選んでください。キャンバスがほぼ空白の場合は、続きを描きたくなるような誘いの一筆を。`;
+Example output:
+{"message":"夕暮れの空に、鳥が羽ばたいていく。","strokes":[{"color":"#ff6b35","width":3,"opacity":0.9,"points":[[100,200],[150,180],[200,160],[250,150],[300,155]]},{"color":"#4a90d9","width":1,"opacity":0.6,"points":[[0,300],[100,280],[200,290],[300,270],[400,260],[500,275],[600,265],[700,270],[800,260]]}]}`;
 
 function normalizePoints(points) {
   if (!Array.isArray(points)) return [];
@@ -64,6 +58,7 @@ app.post('/api/draw', async (req, res) => {
     const response = await client.chat.completions.create({
       model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.2-11b-vision-instruct',
       max_tokens: 2048,
+      temperature: 0.7,
       messages: [
         { role: 'system', content: SYSTEM },
         {

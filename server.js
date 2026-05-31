@@ -52,24 +52,43 @@ function repairJSON(text) {
   // 直接パース
   try { return JSON.parse(text); } catch {}
 
-  // マークダウンのコードブロックを除去
+  // マークダウンのコードブロックを除去して再試行
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch {} }
 
-  // JSON オブジェクトを探す
+  // JSON オブジェクトの開始を探す
   const start = text.indexOf('{');
   if (start === -1) throw new Error('No JSON found in response');
-  let partial = text.slice(start);
+  const partial = text.slice(start);
 
-  // 閉じ括弧を補完して修復を試みる
-  let sq = 0, cu = 0;
+  // スタックベース修復：}の手前に未閉じの[があれば]を自動挿入
+  const stack = [];
+  let repaired = '';
   for (const ch of partial) {
-    if (ch === '[') sq++; else if (ch === ']') sq--;
-    if (ch === '{') cu++; else if (ch === '}') cu--;
+    if (ch === '[' || ch === '{') {
+      stack.push(ch);
+      repaired += ch;
+    } else if (ch === ']') {
+      if (stack.at(-1) === '[') stack.pop();
+      repaired += ch;
+    } else if (ch === '}') {
+      // }の前に閉じていない[があればすべて閉じる
+      while (stack.length && stack.at(-1) === '[') {
+        repaired += ']';
+        stack.pop();
+      }
+      if (stack.at(-1) === '{') stack.pop();
+      repaired += ch;
+    } else {
+      repaired += ch;
+    }
   }
-  const repaired = partial + ']'.repeat(Math.max(0, sq)) + '}'.repeat(Math.max(0, cu));
-  try { return JSON.parse(repaired); } catch {}
+  // 末尾に残った未閉じ括弧を閉じる
+  for (const ch of [...stack].reverse()) {
+    repaired += ch === '[' ? ']' : '}';
+  }
 
+  try { return JSON.parse(repaired); } catch {}
   throw new Error('Could not parse AI response as JSON');
 }
 
